@@ -33,66 +33,59 @@ loading_intro
 
 #Connecting to Internet (wifi only for now)
 
-# echo "Connecting to Internet"
-# connecting_wifi(){
-#     read -p "Enter your SSID:" ssid
-#     read -s -p "Enter passphrase:" passphrase
-#     iwctl station wlan0 connect "$ssid" -P "$passphrase"
-# }
-# connecting_wifi
+ echo "Connecting to Internet"
+ connecting_wifi(){
+     read -p "Enter your SSID:" ssid
+     read -s -p "Enter passphrase:" passphrase
+     iwctl station wlan0 connect "$ssid" -P "$passphrase"
+ }
+ connecting_wifi
 
-# sleep 5
-# check_wifi_connection() {
-#     iwctl station wlan0 show | grep -q "Connected"  # Adjust wlan0 if your device name is different
-# }
-# if check_wifi_connection; then
-#     echo "Successfully connected to $SSID!"
-# else
-#     echo "Failed to connect to $SSID. Try again"
-#     connecting_wifi
-# fi
+ sleep 5
+ check_wifi_connection() {
+     iwctl station wlan0 show | grep -q "Connected"  # Adjust wlan0 if your device name is different
+ }
+ if check_wifi_connection; then
+     echo "Successfully connected to $ssid!"
+ else
+     echo "Failed to connect to $ssid. Try again"
+     connecting_wifi
+ fi
 
 # Ask for the disk to use
 
 echo "Available disks:"
 lsblk -d -e 7,11 -n -o NAME,SIZE
 choose_disk(){
-    read -p "Enter the disk you want to install Arch on (e.g., sda): " disk
+    read -p "Enter the disk you want to install Arch on (e.g., sda): " diskc
 }
 choose_disk
 # Confirm with the user
-read -p "You chose /dev/$disk. Are you sure? (y/n) " confirm
+read -p "You chose /dev/$diskc. Are you sure? (y/n) " confirm
 if [[ $confirm != "y" ]]; then
     echo "Cancelled..."
     choose_disk
 fi
 
 echo "Partition Disk according to your needs...."
-echo "Recommened Partition Table:
-    EFI 2GiB
-	SWAP 15GiB
-	/ (root) 80GiB
-	/home Remainder Space"
+echo "Press Enter to partition.."
+read
+sgdisk -o -n 1:0:+2G -t 1:ef00 -n 2:0:+15G -t 2:8200 -n 3:0:+80G -t 3:8300 -n 4:0:0 -t 4:8300 /dev/$diskc
 
-echo "Press Enter to continue, Exit the GUI when done."
-cfdisk $disk
-read "Were you satisfied with Paritioning? (y/n) " confirm1
-if [[ $confirm1 != "y" ]]; then
-    echo "Cancelled..."
-    cfdisk $disk
-fi
+read -p "Were you satisfied with Paritioning? (y/n) " confirm1
+lsblk /dev/$diskc
 echo "Formatting partitions..."
-mkfs.fat -F32 "${DISK}1"           # Format EFI partition
-mkswap "${DISK}2"                   # Set up SWAP partition
-mkfs.ext4 "${DISK}3"                # Format root partition
-mkfs.ext4 "${DISK}4"                # Format home partition
+mkfs.fat -F32 /dev/${diskc}p1           # Format EFI partition
+mkswap /dev/${diskc}p2                   # Set up SWAP partition
+mkfs.ext4 /dev/${diskc}p3                # Format root partition
+mkfs.ext4 /dev/${diskc}p4                # Format home partition
 echo "Formatting completed"
 
 echo "Mounting disks"
-mount /dev/parition-3 /mnt
-mount --mkdir /dev/partition-1 /mnt/boot
-mount --mkdir /dev/partition-4 /mnt/home
-swapon /dev/partition-2
+mount /dev/${diskc}p3 /mnt
+mount --mkdir /dev/${diskc}p1 /mnt/boot
+mount --mkdir /dev/${diskc}p4 /mnt/home
+swapon /dev/${diskc}p2
 echo "Mounting Complete"
 
 echo "Installing essentials"
@@ -104,55 +97,61 @@ genfstab -U /mnt >> /mnt/etc/fstab
 echo "Completed."
 
 echo "Chrooting into the system..."
-arch-chroot /mnt <<EOF
+arch-chroot /mnt /bin/bash -c '
 
 echo "Setting time zone..."
 ln -sf /usr/share/zoneinfo/Asia/Kolkata /etc/localtime
 hwclock --systohc
 
 echo "Setting locale..."
-echo 'en_US.UTF-8 UTF-8' > /etc/locale.gen
+echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
 locale-gen
-echo 'LANG=en_US.UTF-8' > /etc/locale.conf
+echo "LANG=en_US.UTF-8" > /etc/locale.conf
 
-echo "Creating an initial ramdisk environment (mkinicpio)"
-mkinitcpio -P 		
+echo "Creating an initial ramdisk environment (mkinitcpio)"
+mkinitcpio -P
 
 read -p "Enter the hostname for your system: " hostname
 
+# Create user and home directory
 useradd -G wheel $hostname
 mkdir /home/$hostname
 chown $hostname:$hostname /home/$hostname
-echo '%wheel ALL=(ALL)  ALL' > /etc/sudoers
+echo "%wheel ALL=(ALL) ALL" >> /etc/sudoers
+
 echo "User created"
-read "Do you wanna create password for your user? (y/n)" confirm2
-if [[ $confirm2 = "y" ]]; then
+read -p "Do you wanna create a password for your user? (y/n) " confirm2
+if [[ $confirm2 == "y" ]]; then
     passwd $hostname
 fi
-if [[ $confirm2 != "y" ]]; then
-    echo "\n"
-fi
+
+echo "Updating keyring..."
+pacman-key --init
+pacman-key --populate archlinux
+pacman -Sy  # Update the package database
+
 
 echo "Installing essentials for your system."
-pacman -S networkmanager grub efibootmgr kitty bluez bluez-utils ntfs-3g --noconfirm
+pacman -S --noconfirm networkmanager grub efibootmgr kitty bluez bluez-utils ntfs-3g
 systemctl enable NetworkManager
 
-# Ask if the user wants a desktop environment (no need to press enter after selecting)
-echo -e "Choose a Desktop Environment:\n1) GNOME\n2) KDE Plasma\n3)Hyprland\n4) Skip DE installation"
+# Ask if the user wants a desktop environment
+echo -e "Choose a Desktop Environment:\n1) GNOME\n2) KDE Plasma\n3) Hyprland\n4) Skip DE installation"
 read -n1 -p "Press 1, 2, or 3: " de_choice
 echo ""
 
 case $de_choice in
     1)
         echo "You selected GNOME."
-        pacman -S gnome gnome-extra --noconfirm
+        pacman -S --noconfirm gnome gnome-extra
         ;;
     2)
         echo "You selected KDE Plasma."
-        pacman -S plasma kde-applications --noconfirm
+        pacman -S --noconfirm plasma kde-applications
         ;;
-    3)  echo "You selected Hyprland."
-        pacman -S hyprland sddm --noconfirm
+    3)
+        echo "You selected Hyprland."
+        pacman -S --noconfirm hyprland sddm
         ;;
     4)
         echo "Skipping desktop environment installation."
@@ -167,10 +166,13 @@ echo "Installing bootloader..."
 grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
 grub-mkconfig -o /boot/grub/grub.cfg
 systemctl enable sddm
-echo "Exitng Chroot.."
-EOF
+echo "Exiting chroot..."
+exit
+'
+echo "Enter password for root (very necessary):"
+passwd 
 echo "Installation complete. Unmounting..."
 umount -R /mnt
-echo "Press any key to reboot..."
+echo "Installation complete. Press any key to reboot or Ctrl+C to cancel."
 read
 reboot
