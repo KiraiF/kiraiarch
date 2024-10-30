@@ -7,4 +7,5 @@
 5. Make the script executable: `chmod +x <script_name>.sh`
 6. Run the script: `./<script_name>.sh`
 
-**NOTE**: Purely made for personal usage for now.
+> [!NOTE]
+>  Purely made for personal usage for now.
