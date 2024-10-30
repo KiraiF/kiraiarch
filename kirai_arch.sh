@@ -32,15 +32,17 @@ loading_intro() {
 loading_intro
 
 #Connecting to Internet (wifi only for now)
-
- echo "Connecting to Internet"
+ read -p "Do you wanna connect to wifi?", confirm0
  connecting_wifi(){
      read -p "Enter your SSID:" ssid
      read -s -p "Enter passphrase:" passphrase
      iwctl station wlan0 connect "$ssid" -P "$passphrase"
  }
- connecting_wifi
-
+ if [[ $confirm0 = "y" ]]; then
+    echo "Connecting to your wifi"
+    connecting_wifi
+ fi
+ 
  sleep 5
  check_wifi_connection() {
      iwctl station wlan0 show | grep -q "Connected"  # Adjust wlan0 if your device name is different
